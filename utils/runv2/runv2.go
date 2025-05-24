@@ -44,7 +44,7 @@ func (b *TimedResponseBody) Read(p []byte) (int, error) {
 }
 
 
-func Run(adamId string, playlistUrl string, outfile string, Config structs.ConfigSet) error {
+func Run(adamId string, playlistUrl string, outfile string, decryptPort string, songName string, Config structs.ConfigSet) error {
 	var err error
 	var optstimeout uint
 	optstimeout = 0
@@ -129,7 +129,7 @@ func Run(adamId string, playlistUrl string, outfile string, Config structs.Confi
 				progressbar.OptionShowCount(),
 				progressbar.OptionEnableColorCodes(true),
 				progressbar.OptionShowBytes(true),
-				progressbar.OptionSetDescription("Downloading..."),
+				progressbar.OptionSetDescription(fmt.Sprintf("Downloading %s (%s)...", adamId, songName)),
 				progressbar.OptionSetTheme(progressbar.Theme{
 					Saucer:        "",
 					SaucerHead:    "",
@@ -150,7 +150,7 @@ func Run(adamId string, playlistUrl string, outfile string, Config structs.Confi
 	totalLen = do.ContentLength
 	// connect to decryptor
 	//addr := fmt.Sprintf("127.0.0.1:10020")
-	addr := Config.DecryptM3u8Port
+	addr := decryptPort
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return err
@@ -158,7 +158,7 @@ func Run(adamId string, playlistUrl string, outfile string, Config structs.Confi
 	//fmt.Print("Decrypting...\n")
 	defer Close(conn)
 
-	err = downloadAndDecryptFile(conn, body, outfile, adamId, segments, totalLen, Config)
+	err = downloadAndDecryptFile(conn, body, outfile, adamId, songName, segments, totalLen, Config)
 	if err != nil {
 		return err
 	}
@@ -167,7 +167,7 @@ func Run(adamId string, playlistUrl string, outfile string, Config structs.Confi
 }
 
 func downloadAndDecryptFile(conn io.ReadWriter, in io.Reader, outfile string,
-	adamId string, playlistSegments []*m3u8.MediaSegment, totalLen int64, Config structs.ConfigSet) error {
+	adamId string, songName string, playlistSegments []*m3u8.MediaSegment, totalLen int64, Config structs.ConfigSet) error {
 	var buffer bytes.Buffer
 	var outBuf *bufio.Writer
 	MaxMemorySize := int64(Config.MaxMemoryLimit * 1024 * 1024)
@@ -214,7 +214,7 @@ func downloadAndDecryptFile(conn io.ReadWriter, in io.Reader, outfile string,
 		progressbar.OptionShowCount(),
 		progressbar.OptionEnableColorCodes(true),
 		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetDescription("Decrypting..."),
+		progressbar.OptionSetDescription(fmt.Sprintf("Decrypting %s (%s)...", adamId, songName)),
 		progressbar.OptionSetTheme(progressbar.Theme{
 			Saucer:        "",
 			SaucerHead:    "",

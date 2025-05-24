@@ -24,8 +24,10 @@ type ConfigSet struct {
 	CleanChoice             string `yaml:"clean-choice"`
 	AppleMasterChoice       string `yaml:"apple-master-choice"`
 	MaxMemoryLimit          int    `yaml:"max-memory-limit"`
-	DecryptM3u8Port         string `yaml:"decrypt-m3u8-port"`
-	GetM3u8Port             string `yaml:"get-m3u8-port"`
+	DecryptM3u8PortStart    int    `yaml:"decrypt-m3u8-port-start"`
+	DecryptM3u8PortEnd      int    `yaml:"decrypt-m3u8-port-end"`
+	GetM3u8PortStart        int    `yaml:"get-m3u8-port-start"`
+	GetM3u8PortEnd          int    `yaml:"get-m3u8-port-end"`
 	GetM3u8Mode             string `yaml:"get-m3u8-mode"`
 	GetM3u8FromDevice       bool   `yaml:"get-m3u8-from-device"`
 	AacType                 string `yaml:"aac-type"`

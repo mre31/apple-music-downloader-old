@@ -14,8 +14,10 @@ cover-format: jpg       #jpg png or original
 alac-save-folder: AM-DL downloads
 atmos-save-folder: AM-DL-Atmos downloads
 max-memory-limit: 256 # MB
-decrypt-m3u8-port: "127.0.0.1:10020"
-get-m3u8-port: "127.0.0.1:20020"
+decrypt-m3u8-port-start: 10020
+decrypt-m3u8-port-end: 10029
+get-m3u8-port-start: 20020
+get-m3u8-port-end: 20029
 get-m3u8-from-device: true
 #set 'all' to retrieve all m3u8, and set 'hires' to only detect hires m3u8.
 get-m3u8-mode: hires # all hires
