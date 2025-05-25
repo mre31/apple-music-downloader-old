@@ -57,22 +57,130 @@ var (
 	inputFile      *string    // Dosyadan URL okuma için yeni flag
 	globalWg       sync.WaitGroup // Tüm albüm/işlem goroutine'lerini beklemek için
 	downloadSemaphore chan struct{}   // Eş zamanlı indirme sayısını sınırlamak için semafor
+
+	// Hatalı portları takip etmek için global değişkenler
+	failedDecryptPorts    map[int]bool
+	failedDecryptPortsMutex sync.Mutex
+	failedGetM3u8Ports      map[int]bool
+	failedGetM3u8PortsMutex sync.Mutex
 )
+
+func init() {
+	// init fonksiyonunda map'leri initialize et
+	failedDecryptPorts = make(map[int]bool)
+	failedGetM3u8Ports = make(map[int]bool)
+}
+
+func extractPortFromString(portStr string) (int, error) {
+	parts := strings.Split(portStr, ":")
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("invalid port string format: %s", portStr)
+	}
+	port, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse port number: %v", err)
+	}
+	return port, nil
+}
+
+func addFailedDecryptPort(portStr string) {
+	port, err := extractPortFromString(portStr)
+	if err != nil {
+		fmt.Printf("Error extracting port for failedDecryptPorts: %v\n", err)
+		return
+	}
+	failedDecryptPortsMutex.Lock()
+	defer failedDecryptPortsMutex.Unlock()
+	failedDecryptPorts[port] = true
+	fmt.Printf("Port %d added to failedDecryptPorts list.\n", port)
+}
+
+func addFailedGetM3u8Port(portStr string) {
+	port, err := extractPortFromString(portStr)
+	if err != nil {
+		fmt.Printf("Error extracting port for failedGetM3u8Ports: %v\n", err)
+		return
+	}
+	failedGetM3u8PortsMutex.Lock()
+	defer failedGetM3u8PortsMutex.Unlock()
+	failedGetM3u8Ports[port] = true
+	fmt.Printf("Port %d added to failedGetM3u8Ports list.\n", port)
+}
 
 func getNextDecryptPort() string {
 	decryptPortMutex.Lock()
 	defer decryptPortMutex.Unlock()
-	port := Config.DecryptM3u8PortStart + currentDecryptPortIndex
-	currentDecryptPortIndex = (currentDecryptPortIndex + 1) % (Config.DecryptM3u8PortEnd - Config.DecryptM3u8PortStart + 1)
-	return "127.0.0.1:" + strconv.Itoa(port)
+
+	failedDecryptPortsMutex.Lock()
+	defer failedDecryptPortsMutex.Unlock()
+
+	startPort := Config.DecryptM3u8PortStart
+	endPort := Config.DecryptM3u8PortEnd
+	portRangeSize := endPort - startPort + 1
+
+	if portRangeSize <= 0 {
+		// Geçersiz port aralığı, varsayılan veya hata durumu
+		fmt.Println("Error: DecryptM3u8 port range is invalid.")
+		// Acil bir durumda varsayılan bir port döndürebilir veya programı sonlandırabiliriz.
+		// Şimdilik, yapılandırmadaki başlangıç portunu döndürelim.
+		return "127.0.0.1:" + strconv.Itoa(startPort)
+	}
+
+	initialIndex := currentDecryptPortIndex
+	for i := 0; i < portRangeSize; i++ {
+		port := startPort + currentDecryptPortIndex
+		if !failedDecryptPorts[port] {
+			currentDecryptPortIndex = (currentDecryptPortIndex + 1) % portRangeSize
+			return "127.0.0.1:" + strconv.Itoa(port)
+		}
+		currentDecryptPortIndex = (currentDecryptPortIndex + 1) % portRangeSize
+		if currentDecryptPortIndex == initialIndex && i > 0 { // Tüm portlar denendi ve hepsi hatalıysa
+			break
+		}
+	}
+
+	// Eğer buraya gelinirse, tüm portlar 'failedDecryptPorts' listesindedir
+	// veya hiç uygun port bulunamamıştır.
+	// Bu durumda bir uyarı verip, sıradaki (muhtemelen hatalı) portu döndürelim.
+	// Ana indirme mantığı bu portla tekrar deneyebilir veya hatayı işleyebilir.
+	fmt.Printf("Warning: All decrypt ports (%d-%d) are currently marked as failed. Returning next port in cycle.\n", startPort, endPort)
+	portToReturn := startPort + initialIndex // Hatalı olsa da ilk denenen portu döndür
+	currentDecryptPortIndex = (initialIndex + 1) % portRangeSize // Bir sonrakine geç
+	return "127.0.0.1:" + strconv.Itoa(portToReturn)
 }
 
 func getNextGetM3u8Port() string {
 	getM3u8PortMutex.Lock()
 	defer getM3u8PortMutex.Unlock()
-	port := Config.GetM3u8PortStart + currentGetM3u8PortIndex
-	currentGetM3u8PortIndex = (currentGetM3u8PortIndex + 1) % (Config.GetM3u8PortEnd - Config.GetM3u8PortStart + 1)
-	return "127.0.0.1:" + strconv.Itoa(port)
+
+	failedGetM3u8PortsMutex.Lock()
+	defer failedGetM3u8PortsMutex.Unlock()
+
+	startPort := Config.GetM3u8PortStart
+	endPort := Config.GetM3u8PortEnd
+	portRangeSize := endPort - startPort + 1
+
+	if portRangeSize <= 0 {
+		fmt.Println("Error: GetM3u8 port range is invalid.")
+		return "127.0.0.1:" + strconv.Itoa(startPort)
+	}
+
+	initialIndex := currentGetM3u8PortIndex
+	for i := 0; i < portRangeSize; i++ {
+		port := startPort + currentGetM3u8PortIndex
+		if !failedGetM3u8Ports[port] {
+			currentGetM3u8PortIndex = (currentGetM3u8PortIndex + 1) % portRangeSize
+			return "127.0.0.1:" + strconv.Itoa(port)
+		}
+		currentGetM3u8PortIndex = (currentGetM3u8PortIndex + 1) % portRangeSize
+		if currentGetM3u8PortIndex == initialIndex && i > 0 {
+			break
+		}
+	}
+	fmt.Printf("Warning: All GetM3u8 ports (%d-%d) are currently marked as failed. Returning next port in cycle.\n", startPort, endPort)
+	portToReturn := startPort + initialIndex
+	currentGetM3u8PortIndex = (initialIndex + 1) % portRangeSize
+	return "127.0.0.1:" + strconv.Itoa(portToReturn)
 }
 
 func loadConfig() error {
@@ -687,10 +795,14 @@ func downloadTrack(trackNum int, trackTotal int, meta *structs.AutoGenerated, tr
 				}
 				continue
 			}
-			//边下载边解密
-			errRunV2 := runv2.Run(track.ID, trackM3u8Url, trackPath, getNextDecryptPort(), track.Attributes.Name, Config) // track.Attributes.Name eklendi
+			//邊下載邊解密
+			decryptPort := getNextDecryptPort()
+			errRunV2 := runv2.Run(track.ID, trackM3u8Url, trackPath, decryptPort, track.Attributes.Name, Config) // track.Attributes.Name eklendi
 			if errRunV2 != nil {
-				fmt.Printf("Track %d (%s): Failed to run v2 (download/decrypt): %v. Retry %d/%d\n", trackNum, track.Attributes.Name, errRunV2, currentRetry+1, maxRetries)
+				fmt.Printf("Track %d (%s): Failed to run v2 (download/decrypt) on port %s: %v. Retry %d/%d\n", trackNum, track.Attributes.Name, decryptPort, errRunV2, currentRetry+1, maxRetries)
+				if strings.Contains(errRunV2.Error(), "connect: connection refused") || strings.Contains(errRunV2.Error(), "dial tcp") {
+					addFailedDecryptPort(decryptPort)
+				}
 				if currentRetry == maxRetries-1 {
 					counter.Error++
 				}
@@ -1681,9 +1793,13 @@ func checkM3u8(b string, f string) (string, error) {
 	var EnhancedHls string
 	if Config.GetM3u8FromDevice {
 		adamID := b
-		conn, err := net.Dial("tcp", getNextGetM3u8Port()) // Config.GetM3u8Port yerine getNextGetM3u8Port() kullanıldı
+		getM3u8Port := getNextGetM3u8Port() // Config.GetM3u8Port yerine getNextGetM3u8Port() kullanıldı
+		conn, err := net.Dial("tcp", getM3u8Port)
 		if err != nil {
-			fmt.Println("Error connecting to device:", err)
+			fmt.Printf("Error connecting to device on port %s: %v\n", getM3u8Port, err)
+			if strings.Contains(err.Error(), "connect: connection refused") || strings.Contains(err.Error(), "dial tcp") {
+				addFailedGetM3u8Port(getM3u8Port)
+			}
 			return "none", err
 		}
 		defer conn.Close()
